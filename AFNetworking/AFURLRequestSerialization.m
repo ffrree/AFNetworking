@@ -687,6 +687,9 @@ NSTimeInterval const kAFUploadStream3GSuggestedDelay = 0.2;
 - (id)initWithStringEncoding:(NSStringEncoding)encoding;
 - (void)setInitialAndFinalBoundaries;
 - (void)appendHTTPBodyPart:(AFHTTPBodyPart *)bodyPart;
+
+// BUGFIX (FFRREE): S3 Upload (NSURLSession clears Content-Length on HTTPBodyStream)
+- (NSData *)consumeStream;
 @end
 
 #pragma mark -
@@ -857,7 +860,9 @@ NSTimeInterval const kAFUploadStream3GSuggestedDelay = 0.2;
 
     // Reset the initial and final boundaries to ensure correct Content-Length
     [self.bodyStream setInitialAndFinalBoundaries];
-    [self.request setHTTPBodyStream:self.bodyStream];
+// BUGFIX (FFRREE): S3 Upload (NSURLSession clears Content-Length on HTTPBodyStream)
+//    [self.request setHTTPBodyStream:self.bodyStream];
+	[self.request setHTTPBody:[self.bodyStream consumeStream]];
 
     [self.request setValue:[NSString stringWithFormat:@"multipart/form-data; boundary=%@", self.boundary] forHTTPHeaderField:@"Content-Type"];
     [self.request setValue:[NSString stringWithFormat:@"%llu", [self.bodyStream contentLength]] forHTTPHeaderField:@"Content-Length"];
@@ -972,6 +977,25 @@ NSTimeInterval const kAFUploadStream3GSuggestedDelay = 0.2;
 
 - (BOOL)hasBytesAvailable {
     return [self streamStatus] == NSStreamStatusOpen;
+}
+
+// BUGFIX (FFRREE): S3 Upload (NSURLSession clears Content-Length on HTTPBodyStream)
+- (NSData *)consumeStream {
+    NSMutableData *data = [NSMutableData dataWithCapacity:(NSUInteger)self.contentLength];
+
+    uint8_t buffer[1024];
+    NSInteger bytesRead = 0;
+    [self open];
+
+    while (YES) {
+        bytesRead = [self read:buffer maxLength:1024];
+        if (bytesRead == 0) {
+            break;
+        }
+        [data appendBytes:&buffer length:bytesRead];
+    }
+
+    return data;
 }
 
 #pragma mark - NSStream
